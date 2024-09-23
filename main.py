@@ -1,7 +1,7 @@
 import torch,numpy as np,os,random
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import torch.nn as nn,logging,argparse
-from CTCC_data_loader import get_task_processor
+from data_loader import get_task_processor
 from transformers import AutoModel,AdamW,BertTokenizer,BertForSequenceClassification
 from tqdm import tqdm, trange
 import torch.utils.data as Data,json
@@ -11,7 +11,7 @@ from sklearn.metrics import accuracy_score,precision_score,recall_score
 T=0.5
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+# loss function
 crition_mse = nn.MSELoss(reduction='elementwise_mean').cuda()
 crition_ce = nn.CrossEntropyLoss().cuda()
 
@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 flag_embding = 4
 lamb=25
 class InputFeatures(object):
+    """A single set of features of data."""
+
     def __init__(self, input_ids, lables, token_type_ids, attention_mask):
         self.input_ids = input_ids
         self.lables = lables
@@ -31,6 +33,7 @@ class InputFeatures(object):
         self.attention_mask = attention_mask
 
 class errorFeatures(object):
+    """A single set of features of data."""
 
     def __init__(self, input_ids, lables, token_type_ids, attention_mask,confidence):
         self.input_ids = input_ids
@@ -61,30 +64,30 @@ class MyModel(nn.Module):
     def forward(self, input_ids, attention_mask=None, token_type_ids=None,flag_embding=None):
         if flag_embding == 1:
             outputs = self.bert(input_ids, attention_mask, token_type_ids)
-            hidden_states = outputs.hidden_states[-1]  
-            first_hidden_states = hidden_states[:, 0, :]  
-            logit = self.fc(first_hidden_states)  
+            hidden_states = outputs.hidden_states[-1]  # (batch_size, sequence_length, hidden_size)
+            first_hidden_states = hidden_states[:, 0, :]  # (batch_size,hidden_size*4)
+            logit = self.fc(first_hidden_states)  # [bs, classes]
         else:
             outputs = self.bert(input_ids, attention_mask, token_type_ids)
             hidden_states = torch.cat(tuple([outputs.hidden_states[i] for i in [-1, -2, -3, -4]]),
-                                        dim=-1)  
-            first_hidden_states = hidden_states[:, 0, :]  
-            logit = self.fc(first_hidden_states)  
+                                        dim=-1)  # (batch_size, sequence_length, hidden_size*4)
+            first_hidden_states = hidden_states[:, 0, :]  # (batch_size,hidden_size*4)
+            logit = self.fc(first_hidden_states)  # [bs, classes]
 
         return logit 
 
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, seed=12345):
+    """Loads a data file into a list of `InputBatch`s."""
     label_map = {}
-    
     for (i, label) in enumerate(label_list):
         label_map[int(label)] = i
 
     features = []
     for (ex_index, example) in enumerate(examples):
         label=label_map[int(example.label)]
-        
+        # one_hot_lable=one_hot(lable,len(label_list))
         encoded_dict = tokenizer.encode_plus(
-            example.text_a,  
+            example.text_a,  #
             add_special_tokens=True,  
             max_length=256,  
             pad_to_max_length=True,
@@ -100,17 +103,17 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
     return features
 
 def convert_examples_to_features_error(examples, label_list, max_seq_length, tokenizer, seed=12345):
+    """Loads a data file into a list of `InputBatch`s."""
     label_map = {}
-    
     for (i, label) in enumerate(label_list):
         label_map[int(label)] = i
 
     features = []
     for (ex_index, example) in enumerate(examples):
         label=label_map[int(example.label)]
-        
+        # one_hot_lable=one_hot(lable,len(label_list))
         encoded_dict = tokenizer.encode_plus(
-            example.text_a,  
+            example.text_a, 
             add_special_tokens=True,  
             max_length=256,  
             pad_to_max_length=True,
@@ -126,33 +129,6 @@ def convert_examples_to_features_error(examples, label_list, max_seq_length, tok
                           ))
     return features
 
-def convert_examples_to_features_dev(examples, label_list, max_seq_length, tokenizer, seed=12345):
-    features = []
-    for (ex_index, example) in enumerate(examples):
-        temp = []
-        x=example.label
-        a = x.strip('[]')
-        b = a.split(',')
-        for j in b:
-            temp.append(float(j))
-
-        label = temp
-
-        encoded_dict = tokenizer.encode_plus(
-            example.text_a,  
-            add_special_tokens=True,  
-            max_length=256,  
-            pad_to_max_length=True,
-            return_tensors='pt',  
-        )
-
-        features.append(
-            InputFeatures(input_ids=encoded_dict['input_ids'],
-                          token_type_ids=encoded_dict['token_type_ids'],
-                          attention_mask=encoded_dict['attention_mask'],
-                          lables=label
-                          ))
-    return features
 
 def prepare_data_classfiction_c(features):
     all_input_ids,all_token_type_ids,all_attention_mask,all_labels,all_confidences=[],[],[],[],[]
@@ -166,7 +142,7 @@ def prepare_data_classfiction_c(features):
     all_input_ids=torch.cat(all_input_ids,dim=0)
     all_token_type_ids=torch.cat(all_token_type_ids,dim=0)
     all_attention_mask=torch.cat(all_attention_mask,dim=0)
-
+    # all_labels=torch.cat(all_labels,dim=0)
 
     all_input_ids = torch.LongTensor(all_input_ids)
     all_token_type_ids = torch.LongTensor(all_token_type_ids)
@@ -190,7 +166,7 @@ def prepare_data_classfiction(features):
     all_input_ids=torch.cat(all_input_ids,dim=0)
     all_token_type_ids=torch.cat(all_token_type_ids,dim=0)
     all_attention_mask=torch.cat(all_attention_mask,dim=0)
-
+    # all_labels=torch.cat(all_labels,dim=0)
 
     all_input_ids = torch.LongTensor(all_input_ids)
     all_token_type_ids = torch.LongTensor(all_token_type_ids)
@@ -208,10 +184,11 @@ def compute_dev_loss(model, dev_dataloader,label_list,crition):
         batch = tuple(t.to(device) for t in batch)
         label=batch[3]
         logits = model(batch[0], batch[2], batch[1],flag_embding)
-        loss = crition_ce(logits, label)
+        # log_prob = torch.nn.functional.log_softmax(logits, dim=1)
+        # loss = -torch.sum(log_prob * label) / (args.train_batch_size)
+        loss=crition_ce(logits,label)
         sum_loss += loss.item()
     return sum_loss
-
 
 def evaluate(model, data_loader,args):
     model.eval()
@@ -224,8 +201,6 @@ def evaluate(model, data_loader,args):
             y_pred = torch.argmax(y_pred, dim=1).detach().cpu().numpy().tolist()
             val_pred.extend(y_pred)
             val_true.extend(y.squeeze().cpu().numpy().tolist())
-
-    
     precision = precision_score(val_true, val_pred,average='micro')
     accuracy = accuracy_score(val_true, val_pred)
     recall = recall_score(val_true, val_pred,average='micro')
@@ -252,12 +227,12 @@ def train_eval(args):
     torch.cuda.manual_seed_all(args.seed)
     torch.backends.cudnn.deterministic = True
 
-    
+    # os.makedirs(args.output_dir, exist_ok=True)
     processor = get_task_processor(task_name, args.data_dir)
     label_list = processor.get_labels(task_name)
     num_classes = len(label_list)
 
-    
+    # load train and dev data
     train_examples = processor.get_train_examples()
     dev_examples = processor.get_dev_examples()
     error_examples = processor.get_error_examples()
@@ -265,7 +240,7 @@ def train_eval(args):
 
     
     tokenizer = BertTokenizer.from_pretrained('bert-base-chinese/')
-    
+    # model = BertForSequenceClassification.from_pretrained('bert-base-chinese/', num_labels=num_classes, return_dict=True)
     model = MyModel('bert-base-chinese/', 768, num_classes)
     model1 = MyModel('robert_model/', 768, num_classes)
     model.to(device)
@@ -281,7 +256,7 @@ def train_eval(args):
     train_dataloader = DataLoader(train_data, sampler=train_sampler,
                                   batch_size=args.train_batch_size)
 
-    
+   
     print('load error data')
     error_features = convert_examples_to_features_error(error_examples, label_list,
                                                   args.max_seq_length,
@@ -292,7 +267,6 @@ def train_eval(args):
                                   batch_size=args.train_batch_size)
     error_iter = iter(error_dataloader)
 
-    
     print('load aug data')
     erroraug_features = convert_examples_to_features_error(erroraug_examples, label_list,
                                                   args.max_seq_length,
@@ -303,7 +277,7 @@ def train_eval(args):
                                   batch_size=args.train_batch_size)
     erroraug_iter = iter(erroraug_dataloader)
 
-    
+   
     print('load dev data')
     dev_features = convert_examples_to_features(dev_examples, label_list,
                                                 args.max_seq_length,
@@ -319,7 +293,7 @@ def train_eval(args):
     logger.info("  Batch size = %d", args.train_batch_size)
     logger.info("  Num steps = %d", num_train_steps)
 
-    
+    # Prepare optimizer
     no_decay = ['bias', 'gamma', 'beta', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
         {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -342,16 +316,16 @@ def train_eval(args):
             label=batch[3]
 
             logits = model(batch[0],batch[2],batch[1],flag_embding)
-            
-            
+            # log_prob = torch.nn.functional.log_softmax(logits, dim=1)
+            # loss = -torch.sum(log_prob * label) / (args.train_batch_size)
             loss = crition_ce(logits,label)
-            
+            #
             optimizer.zero_grad()
             loss.backward()
             avg_loss += loss.item()
             optimizer.step()
             avg_loss = 0.
-            
+            # eval on dev after every epoch
         dev_loss = compute_dev_loss(model, dev_dataloader, label_list,crition_ce)
 
         print("Epoch {}, Dev loss {}".format(epoch, dev_loss))
@@ -371,16 +345,16 @@ def train_eval(args):
             label = batch[3]
 
             logits = model(batch[0], batch[2], batch[1], flag_embding)
-            
-            
+            # log_prob = torch.nn.functional.log_softmax(logits, dim=1)
+            # loss = -torch.sum(log_prob * label) / (args.train_batch_size)
             loss = crition_ce(logits, label)
-            
+            #
             optimizer.zero_grad()
             loss.backward()
             avg_loss += loss.item()
             optimizer.step()
             avg_loss = 0.
-            
+            # eval on dev after every epoch
         dev_loss = compute_dev_loss(model1, dev_dataloader, label_list, crition_ce)
 
         print("Epoch {}, Dev loss {}".format(epoch, dev_loss))
@@ -390,7 +364,7 @@ def train_eval(args):
             save_robert_path = os.path.join(args.output_dir, 'first_robert.pt')
             torch.save(model.state_dict(), save_robert_path)
 
-    
+   
     if os.path.exists(save_bert_path):
         model.load_state_dict(torch.load(save_bert_path), strict=False)
     else:
@@ -401,38 +375,38 @@ def train_eval(args):
     else:
         raise ValueError("Unable to find the saved model at {}".format(save_robert_path))
 
-    
+   
     for epoch in trange(int(args.num_train_epochs), desc="Epoch"):
         avg_loss = 0.
         model.train()
-        model1.eval()  
+        model1.eval()  #只训练一个模型，减轻框架
         for step, batch_x in enumerate(train_dataloader):
-            
+            # clean data
             batch_x = tuple(t.to(device) for t in batch_x)
             label_x = batch_x[3]
             label_x = one_hot(label_x, num_classes)
 
-            
+            # errordata
             batch_u = error_iter.next()
             batch_u = tuple(t.to(device) for t in batch_u)
             label_u = batch_u[3]
             label_u = one_hot(label_u , num_classes)
             confidence = batch_u[4]
 
-            
+            # erroraugdata
             batch_u1 = erroraug_iter.next()
             batch_u1 = tuple(t.to(device) for t in batch_u1)
 
             logits_u1 = model1(batch_u1[0], batch_u1[2], batch_u1[1], flag_embding)
             log_prob_u1 = torch.nn.functional.log_softmax(logits_u1, dim=1)
 
-            relabel = confidence * label_u + (1-confidence) * log_prob_u1  
-            relabel = relabel ** (1 / args.T)  
+            relabel = confidence * label_u + (1-confidence) * log_prob_u1  #猜测后的标签
+            relabel = relabel ** (1 / args.T)  # temparature sharpening
 
-            relabel = relabel / relabel.sum(dim=1, keepdim=True)  
+            relabel = relabel / relabel.sum(dim=1, keepdim=True)  # normalize
             relabel = relabel.detach()
 
-            
+            #mix up
             l = np.random.beta(args.alpha, args.alpha)
             l = max(l, 1 - l)
             l.to(device)
@@ -444,7 +418,7 @@ def train_eval(args):
             idx = torch.randperm(all_input_ids.size(0))
             idx.to(device)
 
-            
+            # input_b random all_inputs
             input_ids_a, input_ids_b = all_input_ids, all_input_ids[idx]
             token_type_ids_a,token_type_ids_b = all_token_type_ids, all_token_type_ids[idx]
             attention_mask_a,attention_mask_b = all_attention_mask, all_attention_mask[idx]
@@ -460,10 +434,10 @@ def train_eval(args):
             logits_u = logits[args.train_batch_size:]
 
             log_prob_x = torch.nn.functional.log_softmax(logits_x, dim=1)
-            
+            # log_prob_u = torch.nn.functional.log_softmax(logits_u, dim=1)
 
-            loss_x = -torch.sum(log_prob_x  * mix_label) / (args.train_batch_size)  
-            loss_u = crition_mse(logits_u, mix_label)  
+            loss_x = -torch.sum(log_prob_x  * mix_label) / (args.train_batch_size)  #crossEntroy Loss
+            loss_u = crition_mse(logits_u, mix_label)  #L2 Loss
             lamb.to(device)
             loss = loss_x + lamb * loss_u
 
@@ -472,7 +446,7 @@ def train_eval(args):
             avg_loss += loss.item()
             optimizer.step()
             avg_loss = 0.
-            
+            # eval on dev after every epoch
         dev_loss = compute_dev_loss(model, dev_dataloader, label_list, crition_ce)
 
         print("Epoch {}, Dev loss {}".format(epoch, dev_loss))
@@ -501,10 +475,10 @@ def train_eval(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    
+    ## Required parameters
     parser.add_argument("--data_dir", default="CTCC/", type=str,
                         help="The input data dir. Should contain the .tsv files (or other data files) for the task.")
-    parser.add_argument("--output_dir", default="CTCC/nopretrain/", type=str,
+    parser.add_argument("--output_dir", default="CTCC/nopretrain_robert/", type=str,
                         help="The output dir for augmented dataset")
     parser.add_argument("--task_name", default="dianxin", type=str,
                         help="The name of the task to train.")
@@ -512,8 +486,8 @@ if __name__ == '__main__':
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
                              "than this will be padded.")
-    
-    
+    # parser.add_argument("--do_lower_case", default=False, action='store_true',
+    #                     help="Set this flag if you are using an uncased model.")
     parser.add_argument('--cache', default="transformers_cache", type=str)
 
     parser.add_argument("--train_batch_size", default=12, type=int,
@@ -532,23 +506,12 @@ if __name__ == '__main__':
                         help="sample number")
     parser.add_argument('--sample_ratio', type=int, default=7,
                         help="sample ratio")
-    
-    
+    # parser.add_argument('--gpu', type=int, default=3,
+    #                     help="gpu id")
     parser.add_argument('--T', default=0.5, type=float, help='sharpening temperature')
 
     args = parser.parse_args()
 
     print(args)
-    
     train_eval(args)
-
-
-
-
-
-
-
-
-
-
 
