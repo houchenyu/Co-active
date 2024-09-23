@@ -1,7 +1,7 @@
 # Co-active: An Efficient Selective Relabeling Model for Resource Constrained Edge AI
 
 
-🎉 This is a PyTorch/GPU implementation of the paper Co-active. 
+🎉 This is a PyTorch/GPU implementation of the paper Co-active (Under review). 
 
 ## Datasets
 
